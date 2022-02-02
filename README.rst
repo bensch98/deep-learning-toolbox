@@ -29,6 +29,10 @@ Activation Functions
 |Binary Step    |:math:`binarystep(x) = max(0,x)`             |np.heaviside(x,1)|
 +---------------+---------------------------------------------+-----------------+
 
+.. math::
+
+  sigmoid(x) = \frac{1}{( 1 + e^{-x} )}
+
 .. image:: ./activation-functions/img/sigmoid.png
   :height: 300 px
   :width: 600 px

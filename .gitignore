@@ -3,3 +3,4 @@ data
 *.zip
 datasets/lego
 .*.swp
+.ipynb_checkpoints

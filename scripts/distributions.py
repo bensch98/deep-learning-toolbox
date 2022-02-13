@@ -3,11 +3,11 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 
-class ActivationPlot:
+class DistributionPlot:
   def __init__(self, x, func, title):
     """ Init activation function.
-    :param x: Input x of activation function f(x).
-    :param func: Activation function f(x).
+    :param x: Input x of a distribution.
+    :param func: Distribution function itself.
     """
     self.x = x
     self.func = func

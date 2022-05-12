@@ -14,7 +14,7 @@ import numpy as np
 
 def get_overview():
   # load FMNIST dataset
-  data_folder = '../../data'
+  data_folder = '../../../data'
   fmnist = datasets.FashionMNIST(data_folder,
                                  download=True,
                                  train=True)
@@ -89,40 +89,22 @@ def print_distributions(model):
       plt.show()
 
 
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
-data_folder = '../../data'
-
-# train dataset
-fmnist = datasets.FashionMNIST(data_folder,
-                               download=True,
-                               train=True)
-tr_images = fmnist.data
-tr_targets = fmnist.targets
-
-# validation dataset
-val_fmnist = datasets.FashionMNIST(data_folder,
-                                   download=True,
-                                   train=False)
-val_images = val_fmnist.data
-val_targets = val_fmnist.targets
-
-
 class MyNeuralNet(nn.Module):
   def __init__(self):
     super().__init__()
     self.dropout1 = nn.Dropout(0.25)
     self.input_to_hidden_layer = nn.Linear(28*28, 1000)
-    self.batch_norm = nn.BatchNorm1d(1000)
     self.hidden_layer_activation = nn.ReLU()
     self.dropout2 = nn.Dropout(0.25)
     self.hidden_to_output_layer = nn.Linear(1000, 10)
 
   def forward(self, x):
+    x = self.dropout1(x)
     x = self.input_to_hidden_layer(x)
-    x0 = self.batch_norm(x)
-    x1 = self.hidden_layer_activation(x0)
-    x2 = self.hidden_to_output_layer(x1)
-    return x2, x1
+    x = self.hidden_layer_activation(x)
+    x = self.dropout2(x)
+    x = self.hidden_to_output_layer(x)
+    return x
 
 
 class FMNISTDataset(Dataset):
@@ -149,8 +131,10 @@ def get_data(batch_size):
 
 
 def get_model(learning_rate):
-  #model = nn.Sequential(nn.Linear(28*28, 1000),
+  #model = nn.Sequential(nn.Dropout(0.25),
+  #                      nn.Linear(28*28, 1000),
   #                      nn.ReLU(),
+  #                      nn.Dropout(0.25),
   #                      nn.Linear(1000, 10)).to(device)
   model = MyNeuralNet().to(device)
   loss_func = nn.CrossEntropyLoss()
@@ -160,15 +144,15 @@ def get_model(learning_rate):
 
 def train_batch(x, y, model, opt, loss_fn):
   model.train()
-  prediction = model(x)[0]
+  prediction = model(x)
 
-  #l1_regularization = 0
-  l2_regularization = 0
+  l1_regularization = 0
+  #l2_regularization = 0
   for param in model.parameters():
-    #l1_regularization += torch.norm(param, 1)
-    l2_regularization += torch.norm(param, 2)
-  #batch_loss = loss_fn(prediction, y)+0.0001*l1_regularization
-  batch_loss = loss_fn(prediction, y)+0.01*l2_regularization
+    l1_regularization += torch.norm(param, 1)
+    #l2_regularization += torch.norm(param, 2)
+  batch_loss = loss_fn(prediction, y)+0.0001*l1_regularization
+  #batch_loss = loss_fn(prediction, y)+0.01*l2_regularization
 
   batch_loss.backward()
   optimizer.step()
@@ -180,7 +164,7 @@ def train_batch(x, y, model, opt, loss_fn):
 def accuracy(x, y, model):
   model.eval()
   with torch.no_grad():
-    prediction = model(x)[0]
+    prediction = model(x)
   max_values, argmaxes = prediction.max(-1)
   is_correct = argmaxes == y
   return is_correct.cpu().numpy().tolist()
@@ -189,60 +173,80 @@ def accuracy(x, y, model):
 @torch.no_grad()
 def val_loss(x, y, model):
   model.eval()
-  prediction = model(x)[0]
+  prediction = model(x)
   val_loss = loss_fn(prediction, y)
   return val_loss.item()
   
 
-epochs = 30
-batch_size = 32
-learning_rate = 1e-3
-trn_dl, val_dl = get_data(batch_size)
-model, loss_fn, optimizer = get_model(learning_rate)
-train_losses, train_accuracies = [], []
-val_losses, val_accuracies = [], []
+if __name__ == '__main__':
+  # *** pre setup ***
+  device = 'cuda' if torch.cuda.is_available() else 'cpu'
+  data_folder = '../../../data'
 
-scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer,
-                                                 factor=0.5,
-                                                 patience=0,
-                                                 threshold=0.001,
-                                                 verbose=True,
-                                                 min_lr=1e-5,
-                                                 threshold_mode='abs')
+  # train dataset
+  fmnist = datasets.FashionMNIST(data_folder,
+                                 download=True,
+                                 train=True)
+  tr_images = fmnist.data
+  tr_targets = fmnist.targets
 
-for epoch in range(epochs):
-  print(f'--- Epoch: {epoch} ---')
+  # validation dataset
+  val_fmnist = datasets.FashionMNIST(data_folder,
+                                     download=True,
+                                     train=False)
+  val_images = val_fmnist.data
+  val_targets = val_fmnist.targets
 
-  # training
-  train_epoch_losses, train_epoch_accuracies = [], []
-  for idx, batch in enumerate(iter(trn_dl)):
-    x, y = batch
-    batch_loss = train_batch(x, y, model, optimizer, loss_fn)
-    train_epoch_losses.append(batch_loss)
-  train_epoch_loss = np.array(train_epoch_losses).mean()
+  # *** training ***
+  epochs = 30
+  batch_size = 32
+  learning_rate = 1e-3
+  trn_dl, val_dl = get_data(batch_size)
+  model, loss_fn, optimizer = get_model(learning_rate)
+  train_losses, train_accuracies = [], []
+  val_losses, val_accuracies = [], []
 
-  # accuracy
-  for idx, batch in enumerate(iter(trn_dl)):
-    x, y = batch
-    is_correct = accuracy(x, y, model)
-    train_epoch_accuracies.extend(is_correct)
-  train_epoch_accuracy = np.mean(train_epoch_accuracies)
+  scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer,
+                                                   factor=0.5,
+                                                   patience=0,
+                                                   threshold=0.001,
+                                                   verbose=True,
+                                                   min_lr=1e-5,
+                                                   threshold_mode='abs')
 
-  # validation
-  for idx, batch in enumerate(iter(val_dl)):
-    x, y = batch
-    val_is_correct = accuracy(x, y, model)
-    validation_loss = val_loss(x, y, model)
-    scheduler.step(validation_loss)
-  val_epoch_accuracy = np.mean(val_is_correct)
+  for epoch in range(epochs):
+    print(f'--- Epoch: {epoch} ---')
 
-  # store losses and accuracies
-  train_losses.append(train_epoch_loss)
-  train_accuracies.append(train_epoch_accuracy)
-  val_losses.append(validation_loss)
-  val_accuracies.append(val_epoch_accuracy)
+    # training
+    train_epoch_losses, train_epoch_accuracies = [], []
+    for idx, batch in enumerate(iter(trn_dl)):
+      x, y = batch
+      batch_loss = train_batch(x, y, model, optimizer, loss_fn)
+      train_epoch_losses.append(batch_loss)
+    train_epoch_loss = np.array(train_epoch_losses).mean()
 
-torch.save(model.to('cpu').state_dict(), 'fmnist.pth')
-#print_distributions(model)
+    # accuracy
+    for idx, batch in enumerate(iter(trn_dl)):
+      x, y = batch
+      is_correct = accuracy(x, y, model)
+      train_epoch_accuracies.extend(is_correct)
+    train_epoch_accuracy = np.mean(train_epoch_accuracies)
 
-visualize(train_losses, train_accuracies, val_losses, val_accuracies, epochs, batch_size, learning_rate)
+    # validation
+    for idx, batch in enumerate(iter(val_dl)):
+      x, y = batch
+      val_is_correct = accuracy(x, y, model)
+      validation_loss = val_loss(x, y, model)
+      scheduler.step(validation_loss)
+    val_epoch_accuracy = np.mean(val_is_correct)
+
+    # store losses and accuracies
+    train_losses.append(train_epoch_loss)
+    train_accuracies.append(train_epoch_accuracy)
+    val_losses.append(validation_loss)
+    val_accuracies.append(val_epoch_accuracy)
+
+  torch.save(model.to('cpu').state_dict(), '../models/fmnist.pth')
+  #print_distributions(model)
+
+  visualize(train_losses, train_accuracies, val_losses, val_accuracies, epochs, batch_size, learning_rate)

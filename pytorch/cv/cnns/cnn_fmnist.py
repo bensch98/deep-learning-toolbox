@@ -3,14 +3,17 @@ import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 from torch.optim import SGD, Adam
 
-from torchvision import datasets
+from torchvision import datasets, transforms
 from torchsummary import summary
 
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
+from imgaug import augmenters as iaa
+from copy import deepcopy
 
 
+# not enough gpu memory -> force to use cpu instead of cuda
 torch.cuda.is_available = lambda: False
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -45,15 +48,21 @@ def visualize(epochs, train_losses, val_losses, train_accuracies, val_accuracies
 
 
 class FMNISTDataset(Dataset):
-  def __init__(self, x, y):
+  def __init__(self, data, transform=None):
+    x = data.data
+    y = data.targets
     x = x.float()/255
     x = x.view(-1,1,28,28)
     self.x = x
     self.y = y
+    self.transform = transform
 
   def __getitem__(self, idx):
     x, y = self.x[idx], self.y[idx]
-    return x.to(device), y.to(device)
+    if self.transform:
+      x = self.transform(x)
+      y = self.transform(y)
+    return x, y
 
   def __len__(self):
     return len(self.x)
@@ -62,16 +71,16 @@ class FMNISTDataset(Dataset):
 class MyConvNet(nn.Module):
   def __init__(self):
     super().__init__()
-    self.conv1 = nn.Conv2d(1, 32, kernel_size=3)
+    self.conv1 = nn.Conv2d(1, 16, kernel_size=3)
     self.maxpool1 = nn.MaxPool2d(2)
     self.relu1 = nn.ReLU()
-    self.conv2 = nn.Conv2d(32, 64, kernel_size=3)
+    self.conv2 = nn.Conv2d(16, 32, kernel_size=3)
     self.maxpool2 = nn.MaxPool2d(2)
     self.relu2 = nn.ReLU()
     self.flatten = nn.Flatten()
-    self.linear1 = nn.Linear(1600, 128)
+    self.linear1 = nn.Linear(800, 64)
     self.relu3 = nn.ReLU()
-    self.linear2 = nn.Linear(128, 10)
+    self.linear2 = nn.Linear(64, 10)
 
   def forward(self, x):
     x = self.conv1(x)
@@ -95,6 +104,7 @@ def get_model():
 
 
 def train_batch(x, y, model, opt, loss_fn):
+  model.train()
   prediction = model(x)
   batch_loss = loss_fn(prediction, y)
   batch_loss.backward()
@@ -112,11 +122,11 @@ def accuracy(x, y, model):
   return is_correct.cpu().numpy().tolist()
 
 
-def get_data(tr_images, tr_targets, cal_images, val_targets):
-  train = FMNISTDataset(tr_images, tr_targets)
-  trn_dl = DataLoader(train, batch_size=32, shuffle=True)
-  val = FMNISTDataset(val_images, val_targets)
-  val_dl = DataLoader(val, batch_size=len(val_images), shuffle=True)
+def get_data(train_data, val_data, aug):
+  train = FMNISTDataset(train_data, transform=aug)
+  trn_dl = DataLoader(train, batch_size=2, shuffle=True)
+  val = FMNISTDataset(val_data)
+  val_dl = DataLoader(val, batch_size=len(val_data), shuffle=True)
   return trn_dl, val_dl
 
 
@@ -132,19 +142,28 @@ if __name__ == '__main__':
   torch.cuda.empty_cache()
   data_folder = '../../../data'
   
+  # fetch data
   fmnist = datasets.FashionMNIST(data_folder,
                                  download=True,
                                  train=True)
   val_fmnist = datasets.FashionMNIST(data_folder,
                                      download=True,
                                      train=False)
-  
-  tr_images = fmnist.data
-  tr_targets = fmnist.targets
-  val_images = val_fmnist.data
-  val_targets = val_fmnist.targets
-  trn_dl, val_dl = get_data(tr_images, tr_targets, val_images, val_targets)
+  # split dataset
+  #tr_images = fmnist.data
+  #tr_targets = fmnist.targets
+  #val_images = val_fmnist.data
+  #val_targets = val_fmnist.targets
 
+  # augmentation pipeline
+  aug = transforms.Compose([
+  ])
+  #aug = torch.jit.script(aug)
+
+  # init data loaders
+  trn_dl, val_dl = get_data(fmnist, val_fmnist, aug)
+
+  # setup model training
   model, loss_fn, opt = get_model()
   train_losses, train_accuracies = [], []
   val_losses, val_accuracies = [], []
@@ -182,4 +201,5 @@ if __name__ == '__main__':
     val_losses.append(validation_loss)
     val_accuracies.append(val_epoch_accuracy)
 
+  torch.save(model.to('cpu').state_dict(), '../models/cnn_fmnist.pth')
   visualize(epochs, train_losses, train_accuracies, val_losses, val_accuracies)
